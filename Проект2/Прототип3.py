@@ -32,10 +32,10 @@ SPEED_BOOST_PER_WAVE = 0.05
 SCORE_INCREMENT_PER_3_WAVES = 10
 HEALTH_RESTORE_WAVE_INTERVAL = 5
 
-# NEW: Constants for added features
-HEALTH_DROP_CHANCE = 0.1  # 10% chance to drop a health power-up
-SPREAD_ANGLE = 15  # degrees between projectiles in spread shot
-SPREAD_COUNT = 3  # number of projectiles per shot
+
+HEALTH_DROP_CHANCE = 0.1
+SPREAD_ANGLE = 15
+SPREAD_COUNT = 3
 
 
 class Player(arcade.Sprite):
@@ -65,7 +65,6 @@ class Player(arcade.Sprite):
 
 
 class ScorePopup:
-    """отдельный ласс для всплывающих очков при убийстве врага"""
 
     def __init__(self, x, y, score):
         self.x = x
@@ -87,7 +86,6 @@ class ScorePopup:
 
 
 class DamagePopup:
-    """Класс для всплывающего текста при получении урона"""
 
     def __init__(self, x, y):
         self.x = x
@@ -108,7 +106,6 @@ class DamagePopup:
 
 
 class HealthRestorePopup:
-    """Класс для всплывающего текста при восстановлении здоровья"""
 
     def __init__(self, x, y):
         self.x = x
@@ -148,7 +145,6 @@ class Projectile(arcade.Sprite):
 
 
 class EnemyProjectile(arcade.Sprite):
-    """Снаряд врага"""
 
     def __init__(self, x, y, target_x, target_y, speed_boost):
         super().__init__()
@@ -203,11 +199,9 @@ class Enemy(arcade.Sprite):
         self.shoot_timer += delta_time
 
 
-# NEW: Health power-up class
 class HealthPowerUp(arcade.Sprite):
     def __init__(self, x, y):
         super().__init__()
-        # Use a heart image if available; otherwise, fallback to a red circle
         try:
             self.texture = arcade.load_texture("health_powerup.png")
         except:
@@ -215,39 +209,32 @@ class HealthPowerUp(arcade.Sprite):
         self.scale = 0.5
         self.center_x = x
         self.center_y = y
-        self.change_y = -30  # slowly fall down
+        self.change_y = -30
 
     def update(self, delta_time):
         self.center_y += self.change_y * delta_time
-        # Remove if off screen
         if self.top < 0:
             self.remove_from_sprite_lists()
 
 
-# NEW: Charger enemy – moves directly toward player
 class ChargerEnemy(Enemy):
     def __init__(self, speed_boost):
         super().__init__(speed_boost)
-        # Use a different texture if available
         self.texture = arcade.load_texture("charger_enemy.png")
-        # Increase base speed
+
         self.speed = ENEMY_SPEED * 1.5 * speed_boost
 
     def update(self, delta_time, player_x, player_y, speed_boost):
-        # Calculate direction to player
         dx = player_x - self.center_x
         dy = player_y - self.center_y
         distance = math.hypot(dx, dy)
         if distance > 0:
-            # Normalize and set velocity
-            self.change_x = (dx / distance) * self.speed
-            self.change_y = (dy / distance) * self.speed
 
-        # Move
+            self.change_x = (dx / distance) * self.speed
+
         self.center_x += self.change_x * delta_time
         self.center_y += self.change_y * delta_time
 
-        # Bounce off walls
         if self.center_x > SCREEN_WIDTH - 30:
             self.center_x = SCREEN_WIDTH - 30
             self.change_x *= -1
@@ -267,7 +254,6 @@ class ChargerEnemy(Enemy):
         self.angle = 0
 
 
-    # NEW: Simple explosion effect
 class Explosion(arcade.Sprite):
     def __init__(self, x, y):
         super().__init__()
@@ -284,7 +270,6 @@ class Explosion(arcade.Sprite):
         if self.timer >= self.lifetime:
             self.remove_from_sprite_lists()
             return
-        # Grow and fade
         self.scale = 0.5 + (self.timer / self.lifetime) * 1.5
         self.alpha = int(255 * (1 - self.timer / self.lifetime))
 
@@ -324,9 +309,7 @@ class GameNameOrSmth(arcade.Window):
         self.player_name = ""
 
     def spawn_enemies(self):
-        """Создает врагов для текущей волны, включая ChargerEnemy с вероятностью 30%"""
         for i in range(self.current_enemy_count):
-            # NEW: 30% chance to spawn a charger enemy
             if random.random() < CHARGER_CHANCE:
                 enemy = ChargerEnemy(self.speed_boost)
             else:
@@ -334,7 +317,6 @@ class GameNameOrSmth(arcade.Window):
             self.enemies_list.append(enemy)
 
     def update_wave_parameters(self):
-        """Обновляет параметры для новой волны"""
         if self.current_wave % INCREMENT_WAVE_INTERVAL == 0 and self.current_enemy_count < MAX_ENEMY_COUNT:
             self.current_enemy_count = min(self.current_enemy_count + ENEMY_COUNT_INCREMENT, MAX_ENEMY_COUNT)
         self.speed_boost = min(1.0 + (self.current_wave + 2) * SPEED_BOOST_PER_WAVE, MAX_SPEED_BOOST)
@@ -346,15 +328,13 @@ class GameNameOrSmth(arcade.Window):
                 restore_popup = HealthRestorePopup(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
                 self.health_restore_popups.append(restore_popup)
 
-    # NEW: spread shot method
+
     def fire_spread_shot(self, base_angle=None):
-        """Fire spread shot. If base_angle is None, use player's angle."""
         if self.shot_cooldown == False:
             self.shot_cooldown = True
             if base_angle is None:
-                base_angle = 450 - self.player.angle  # conversion used in original Projectile
+                base_angle = 450 - self.player.angle
 
-            # For odd number of projectiles, center one goes straight
             start_angle = base_angle - (SPREAD_ANGLE * (SPREAD_COUNT - 1) / 2)
             for i in range(SPREAD_COUNT):
                 angle = start_angle + i * SPREAD_ANGLE
@@ -379,7 +359,6 @@ class GameNameOrSmth(arcade.Window):
                 popup.draw()
             for popup in self.health_restore_popups:
                 popup.draw()
-            # --- CHANGED: text color from BLACK to WHITE ---
             arcade.draw_text(f"Очки: {self.score}", 10, SCREEN_HEIGHT - 30,
                              arcade.color.WHITE, 20, font_name="Kenney Pixel")
             arcade.draw_text(f"Волна: {self.current_wave}", 10, SCREEN_HEIGHT - 60,
@@ -387,7 +366,6 @@ class GameNameOrSmth(arcade.Window):
             health_text = f"❤️ " * self.player.health
             arcade.draw_text(health_text, SCREEN_WIDTH - 200, SCREEN_HEIGHT - 45,
                              arcade.color.RED, 25, font_name="Kenney Pixel")
-            # --- CHANGED: enemy count color from BLACK to WHITE ---
             arcade.draw_text(f"Врагов: {len(self.enemies_list)}", SCREEN_WIDTH - 200, SCREEN_HEIGHT - 80,
                              arcade.color.WHITE, 16, font_name="Kenney Pixel")
             if self.waiting_for_next_wave:
@@ -400,15 +378,12 @@ class GameNameOrSmth(arcade.Window):
         else:
             arcade.draw_text("GAME OVER", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100,
                              arcade.color.RED, 50, font_name="Kenney Pixel", anchor_x="center")
-            # --- CHANGED: game-over score from BLACK to WHITE ---
             arcade.draw_text(f"Ваш счет: {self.score}", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 40,
                              arcade.color.WHITE, 30, font_name="Kenney Pixel", anchor_x="center")
-            # --- CHANGED: prompt from BLACK to WHITE ---
             arcade.draw_text("Введите ваш ник:", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20,
                              arcade.color.WHITE, 20, font_name="Kenney Pixel", anchor_x="center")
             arcade.draw_text(f"{self.player_name}_", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60,
                              arcade.color.LIGHT_BLUE, 25, font_name="Kenney Pixel", anchor_x="center")
-            # --- CHANGED: instruction from GRAY to LIGHT_GRAY (still visible) ---
             arcade.draw_text("Нажмите ENTER для сохранения", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 100,
                              arcade.color.LIGHT_GRAY, 16, font_name="Kenney Pixel", anchor_x="center")
 
@@ -419,7 +394,6 @@ class GameNameOrSmth(arcade.Window):
         self.players_list.update(delta_time)
         self.projectiles_list.update(delta_time)
         self.enemy_projectiles_list.update(delta_time)
-        # NEW: update power-ups and explosions
         self.powerups_list.update(delta_time)
         self.explosions_list.update(delta_time)
         self.score_popups = [popup for popup in self.score_popups if popup.update(delta_time)]
@@ -456,7 +430,6 @@ class GameNameOrSmth(arcade.Window):
                 self.shot_spread_cooldown_timer = 0
                 self.shot_cooldown = False
 
-        # Enemy-enemy collision avoidance
         for i in range(len(self.enemies_list)):
             for j in range(i + 1, len(self.enemies_list)):
                 enemy1 = self.enemies_list[i]
@@ -483,11 +456,8 @@ class GameNameOrSmth(arcade.Window):
             if hit_list:
                 projectile.remove_from_sprite_lists()
                 for enemy in hit_list:
-                    # NEW: create explosion
                     explosion = Explosion(enemy.center_x, enemy.center_y)
                     self.explosions_list.append(explosion)
-
-                    # NEW: chance to drop health power-up
                     if random.random() < HEALTH_DROP_CHANCE:
                         powerup = HealthPowerUp(enemy.center_x, enemy.center_y)
                         self.powerups_list.append(powerup)
@@ -497,8 +467,6 @@ class GameNameOrSmth(arcade.Window):
                     popup = ScorePopup(enemy.center_x, enemy.center_y, points_earned)
                     self.score_popups.append(popup)
                     enemy.remove_from_sprite_lists()
-
-        # Enemy projectile vs player collisions
         for enemy_projectile in self.enemy_projectiles_list:
             hit_list = arcade.check_for_collision_with_list(enemy_projectile, self.players_list)
             if hit_list:
@@ -509,13 +477,11 @@ class GameNameOrSmth(arcade.Window):
                 if self.player.health <= 0:
                     self.game_over = True
 
-        # NEW: Player vs power-up collisions
         powerup_hits = arcade.check_for_collision_with_list(self.player, self.powerups_list)
         for powerup in powerup_hits:
             if self.player.health < PLAYER_MAX_HEALTH:
                 self.player.health += 1
             powerup.remove_from_sprite_lists()
-            # Optional: add a little popup or sound
 
         if len(self.enemies_list) == 0 and not self.waiting_for_next_wave and not self.game_over:
             self.waiting_for_next_wave = True
@@ -549,7 +515,6 @@ class GameNameOrSmth(arcade.Window):
             self.player.change_angle = ROTATING_SPEED
         elif key == arcade.key.SPACE:
             if not self.waiting_for_next_wave:
-                # NEW: replace single projectile with spread shot
                 self.fire_spread_shot()
 
     def on_key_release(self, key, modifiers):
@@ -569,13 +534,11 @@ class GameNameOrSmth(arcade.Window):
 
         if button == arcade.MOUSE_BUTTON_LEFT:
             if not self.waiting_for_next_wave:
-                # NEW: use spread shot toward mouse
                 angle = 360 - arcade.math.get_angle_degrees(
                     self.player.center_x, self.player.center_y, x, y)
                 self.fire_spread_shot(angle)
 
     def on_text(self, text):
-        """Обработка текстового ввода для ника"""
         if self.game_over:
             if len(self.player_name) < 15:
                 self.player_name += text
