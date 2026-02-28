@@ -1,12 +1,32 @@
 import arcade, math
+import random
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 SCREEN_TITLE = "Что-нибудь вроде прототипа накодили"
 
-SPEED = 100
-ROTATING_SPEED = 90
-PROJECTILE_SPEED = 100
+SPEED = 200
+ROTATING_SPEED = 180
+PROJECTILE_SPEED = 150
+ENEMY_SPEED = 80
+ENEMY_PROJECTILE_SPEED = 100
+ENEMY_SHOOT_COOLDOWN = 5
+
+WAVE_TIME = 5
+
+BASE_ENEMY_SCORE = 10
+PLAYER_MAX_HEALTH = 4
+
+INITIAL_ENEMY_COUNT = 5
+MAX_ENEMY_COUNT = 20
+ENEMY_COUNT_INCREMENT = 1
+INCREMENT_WAVE_INTERVAL = 3
+
+MAX_SPEED_BOOST = 2.0
+SPEED_BOOST_PER_WAVE = 0.05
+
+SCORE_INCREMENT_PER_3_WAVES = 10
+HEALTH_RESTORE_WAVE_INTERVAL = 5
 
 
 class Player(arcade.Sprite):
@@ -19,6 +39,7 @@ class Player(arcade.Sprite):
         self.change_x = 0
         self.change_y = 0
         self.change_angle = 0
+        self.health = PLAYER_MAX_HEALTH
 
     def update(self, delta_time):
         self.center_x += self.change_x * delta_time
@@ -34,10 +55,73 @@ class Player(arcade.Sprite):
         self.angle += self.change_angle * delta_time
 
 
+class ScorePopup:
+    """отдельный ласс для всплывающих очков при убийстве врага"""
+
+    def __init__(self, x, y, score):
+        self.x = x
+        self.y = y
+        self.score = score
+        self.lifetime = 1.0
+        self.timer = 0
+
+    def update(self, delta_time):
+        self.timer += delta_time
+        self.y += 50 * delta_time
+        return self.timer < self.lifetime
+
+    def draw(self):
+        alpha = int(255 * (1 - self.timer / self.lifetime))
+        arcade.draw_text(f"+{self.score}", self.x, self.y,
+                         (255, 215, 0, alpha), 16,
+                         font_name="Kenney Pixel", anchor_x="center")
+
+
+class DamagePopup:
+    """Класс для всплывающего текста при получении урона"""
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.lifetime = 0.8
+        self.timer = 0
+
+    def update(self, delta_time):
+        self.timer += delta_time
+        self.y += 30 * delta_time
+        return self.timer < self.lifetime
+
+    def draw(self):
+        alpha = int(255 * (1 - self.timer / self.lifetime))
+        arcade.draw_text(f"-1", self.x, self.y,
+                         (255, 0, 0, alpha), 16,
+                         font_name="Kenney Pixel", anchor_x="center")
+
+
+class HealthRestorePopup:
+    """Класс для всплывающего текста при восстановлении здоровья"""
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.lifetime = 1.2
+        self.timer = 0
+
+    def update(self, delta_time):
+        self.timer += delta_time
+        self.y += 40 * delta_time
+        return self.timer < self.lifetime
+
+    def draw(self):
+        alpha = int(255 * (1 - self.timer / self.lifetime))
+        arcade.draw_text(f"❤️ ЗДОРОВЬЕ ВОССТАНОВЛЕНО ❤️", self.x, self.y,
+                         (0, 255, 0, alpha), 18,
+                         font_name="Kenney Pixel", anchor_x="center")
+
+
 class Projectile(arcade.Sprite):
     def __init__(self, x, y, angle):
         super().__init__()
-        angle = angle
         self.texture = arcade.load_texture("projectile.png")
         self.angle = 450 - angle
         angle_rad = math.radians(angle)
@@ -54,29 +138,240 @@ class Projectile(arcade.Sprite):
             del self
 
 
+class EnemyProjectile(arcade.Sprite):
+    """Снаряд врага"""
+
+    def __init__(self, x, y, target_x, target_y, speed_boost):
+        super().__init__()
+        self.texture = arcade.load_texture("enemyprojectile.png")
+        self.scale = 1
+        angle_rad = math.atan2(target_y - y, target_x - x)
+        angle_deg = math.degrees(angle_rad)
+        self.angle = 450 - angle_deg
+        self.center_x = x
+        self.center_y = y
+        current_speed = ENEMY_PROJECTILE_SPEED * speed_boost
+        self.change_x = math.cos(angle_rad) * current_speed
+        self.change_y = math.sin(angle_rad) * current_speed
+
+    def update(self, delta_time):
+        self.center_x += self.change_x * delta_time
+        self.center_y += self.change_y * delta_time
+        if self.center_x > SCREEN_WIDTH + 50 or self.center_x < -50 or self.center_y > SCREEN_HEIGHT + 50 or self.center_y < -50:
+            self.remove_from_sprite_lists()
+            del self
+
+
+class Enemy(arcade.Sprite):
+    def __init__(self, speed_boost):
+        super().__init__()
+        self.texture = arcade.load_texture("enemy.png")
+        self.scale = 1
+        self.center_x = random.randint(50, SCREEN_WIDTH - 50)
+        self.center_y = random.randint(50, SCREEN_HEIGHT - 50)
+        self.angle = random.randint(0, 360)
+        current_speed = ENEMY_SPEED * speed_boost
+        self.change_x = math.cos(math.radians(self.angle)) * current_speed
+        self.change_y = math.sin(math.radians(self.angle)) * current_speed
+        self.shoot_timer = random.uniform(0, ENEMY_SHOOT_COOLDOWN / speed_boost)  # скорость стрельбы тоже увеличивается
+
+    def update(self, delta_time, player_x, player_y, speed_boost):
+        self.center_x += self.change_x * delta_time
+        self.center_y += self.change_y * delta_time
+
+        if self.center_x > SCREEN_WIDTH - 30:
+            self.center_x = SCREEN_WIDTH - 30
+            self.change_x *= -1
+        elif self.center_x < 30:
+            self.center_x = 30
+            self.change_x *= -1
+        if self.center_y > SCREEN_HEIGHT - 30:
+            self.center_y = SCREEN_HEIGHT - 30
+            self.change_y *= -1
+        elif self.center_y < 30:
+            self.center_y = 30
+            self.change_y *= -1
+        self.shoot_timer += delta_time
+
+
 class GameNameOrSmth(arcade.Window):
     def __init__(self, width, height, title):
         super().__init__(width, height, title)
         self.background = arcade.load_texture("background.png")
+        self.game_over = False
+        self.player_name = ""
 
     def setup(self):
         self.players_list = arcade.SpriteList()
         self.player = Player()
         self.players_list.append(self.player)
         self.projectiles_list = arcade.SpriteList()
+        self.enemy_projectiles_list = arcade.SpriteList()
+        self.enemies_list = arcade.SpriteList()
+        self.score = 0
+        self.current_wave = 1
+        self.score_popups = []
+        self.damage_popups = []
+        self.health_restore_popups = []
+        self.wave_timer = 0
+        self.waiting_for_next_wave = False
+        self.speed_boost = 1.0
+        self.current_enemy_count = INITIAL_ENEMY_COUNT
+        self.base_score = BASE_ENEMY_SCORE
+        self.spawn_enemies()
+
+        self.game_over = False
+        self.player_name = ""
+
+    def spawn_enemies(self):
+        """Создает врагов для текущей волны"""
+        for i in range(self.current_enemy_count):
+            enemy = Enemy(self.speed_boost)
+            self.enemies_list.append(enemy)
+
+    def update_wave_parameters(self):
+        """Обновляет параметры для новой волны"""
+        if self.current_wave % INCREMENT_WAVE_INTERVAL == 0 and self.current_enemy_count < MAX_ENEMY_COUNT:
+            self.current_enemy_count = min(self.current_enemy_count + ENEMY_COUNT_INCREMENT, MAX_ENEMY_COUNT)
+        self.speed_boost = min(1.0 + (self.current_wave - 1) * SPEED_BOOST_PER_WAVE, MAX_SPEED_BOOST)
+        self.base_score = BASE_ENEMY_SCORE + (self.current_wave // 3) * SCORE_INCREMENT_PER_3_WAVES
+        if self.current_wave % HEALTH_RESTORE_WAVE_INTERVAL == 0:
+            old_health = self.player.health
+            self.player.health = PLAYER_MAX_HEALTH
+            if old_health < PLAYER_MAX_HEALTH:
+                restore_popup = HealthRestorePopup(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+                self.health_restore_popups.append(restore_popup)
 
     def on_draw(self):
         self.clear()
         arcade.draw_texture_rect(self.background,
-                                 arcade.rect.XYWH(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, SCREEN_WIDTH,SCREEN_HEIGHT))
-        self.players_list.draw()
-        self.projectiles_list.draw()
+                                 arcade.rect.XYWH(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, SCREEN_WIDTH, SCREEN_HEIGHT))
+
+        if not self.game_over:
+            self.players_list.draw()
+            self.projectiles_list.draw()
+            self.enemy_projectiles_list.draw()
+            self.enemies_list.draw()
+            for popup in self.score_popups:
+                popup.draw()
+            for popup in self.damage_popups:
+                popup.draw()
+            for popup in self.health_restore_popups:
+                popup.draw()
+            arcade.draw_text(f"Очки: {self.score}", 10, SCREEN_HEIGHT - 30,
+                             arcade.color.BLACK, 20, font_name="Kenney Pixel")
+            arcade.draw_text(f"Волна: {self.current_wave}", 10, SCREEN_HEIGHT - 60,
+                             arcade.color.BLACK, 20, font_name="Kenney Pixel")
+            health_text = f"❤️ " * self.player.health
+            arcade.draw_text(health_text, SCREEN_WIDTH - 200, SCREEN_HEIGHT - 45,
+                             arcade.color.RED, 25, font_name="Kenney Pixel")
+            arcade.draw_text(f"Врагов: {len(self.enemies_list)}", SCREEN_WIDTH - 200, SCREEN_HEIGHT - 80,
+                             arcade.color.BLACK, 16, font_name="Kenney Pixel")
+            if self.waiting_for_next_wave:
+                time_left = int(WAVE_TIME - (self.wave_timer)) + 1
+                if time_left > 0:
+                    arcade.draw_text(f"Следующая волна через: {time_left}",
+                                     SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT // 2,
+                                     arcade.color.YELLOW, 30, font_name="Kenney Pixel",
+                                     align="center")
+        else:
+            arcade.draw_text("GAME OVER", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100,
+                             arcade.color.RED, 50, font_name="Kenney Pixel", anchor_x="center")
+            arcade.draw_text(f"Ваш счет: {self.score}", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 40,
+                             arcade.color.BLACK, 30, font_name="Kenney Pixel", anchor_x="center")
+            arcade.draw_text("Введите ваш ник:", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20,
+                             arcade.color.BLACK, 20, font_name="Kenney Pixel", anchor_x="center")
+            arcade.draw_text(f"{self.player_name}_", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60,
+                             arcade.color.BLUE, 25, font_name="Kenney Pixel", anchor_x="center")
+            arcade.draw_text("Нажмите ENTER для сохранения", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 100,
+                             arcade.color.GRAY, 16, font_name="Kenney Pixel", anchor_x="center")
 
     def on_update(self, delta_time):
+        if self.game_over:
+            return
+
         self.players_list.update(delta_time)
         self.projectiles_list.update(delta_time)
+        self.enemy_projectiles_list.update(delta_time)
+        self.score_popups = [popup for popup in self.score_popups if popup.update(delta_time)]
+        self.damage_popups = [popup for popup in self.damage_popups if popup.update(delta_time)]
+        self.health_restore_popups = [popup for popup in self.health_restore_popups if popup.update(delta_time)]
+
+        for enemy in self.enemies_list:
+            enemy.update(delta_time, self.player.center_x, self.player.center_y, self.speed_boost)
+            current_cooldown = ENEMY_SHOOT_COOLDOWN / self.speed_boost
+            if enemy.shoot_timer >= current_cooldown and not self.waiting_for_next_wave:
+                enemy_projectile = EnemyProjectile(enemy.center_x, enemy.center_y,
+                                                   self.player.center_x, self.player.center_y,
+                                                   self.speed_boost)
+                self.enemy_projectiles_list.append(enemy_projectile)
+                enemy.shoot_timer = 0
+        if self.waiting_for_next_wave:
+            self.wave_timer += delta_time
+            if self.wave_timer >= WAVE_TIME:
+                self.waiting_for_next_wave = False
+                self.current_wave += 1
+                self.update_wave_parameters()
+                self.spawn_enemies()
+        for i in range(len(self.enemies_list)):
+            for j in range(i + 1, len(self.enemies_list)):
+                enemy1 = self.enemies_list[i]
+                enemy2 = self.enemies_list[j]
+                distance = math.sqrt(
+                    (enemy1.center_x - enemy2.center_x) ** 2 + (enemy1.center_y - enemy2.center_y) ** 2)
+                if distance < 50:
+                    if enemy1.center_x < enemy2.center_x:
+                        enemy1.change_x -= 10
+                        enemy2.change_x += 10
+                    else:
+                        enemy1.change_x += 10
+                        enemy2.change_x -= 10
+                    if enemy1.center_y < enemy2.center_y:
+                        enemy1.change_y -= 10
+                        enemy2.change_y += 10
+                    else:
+                        enemy1.change_y += 10
+                        enemy2.change_y -= 10
+
+        for projectile in self.projectiles_list:
+            hit_list = arcade.check_for_collision_with_list(projectile, self.enemies_list)
+            if hit_list:
+                projectile.remove_from_sprite_lists()
+                for enemy in hit_list:
+                    points_earned = self.base_score
+                    self.score += points_earned
+                    popup = ScorePopup(enemy.center_x, enemy.center_y, points_earned)
+                    self.score_popups.append(popup)
+                    enemy.remove_from_sprite_lists()
+
+        for enemy_projectile in self.enemy_projectiles_list:
+            hit_list = arcade.check_for_collision_with_list(enemy_projectile, self.players_list)
+            if hit_list:
+                enemy_projectile.remove_from_sprite_lists()
+                self.player.health -= 1
+                damage_popup = DamagePopup(self.player.center_x, self.player.center_y)
+                self.damage_popups.append(damage_popup)
+                if self.player.health <= 0:
+                    self.game_over = True
+
+        if len(self.enemies_list) == 0 and not self.waiting_for_next_wave and not self.game_over:
+            self.waiting_for_next_wave = True
+            self.wave_timer = 0
 
     def on_key_press(self, key, modifiers):
+        if self.game_over:
+            if key == arcade.key.BACKSPACE:
+                self.player_name = self.player_name[:-1]
+            elif key == arcade.key.ENTER:
+                print(f"Сохранен рекорд: {self.player_name} - {self.score} очков")
+                self.setup()
+            elif key == arcade.key.SPACE:
+                self.player_name += " "
+            else:
+                if len(self.player_name) < 15:
+                    pass
+            return
+
         if key == arcade.key.W:
             self.player.change_y = SPEED
         elif key == arcade.key.S:
@@ -90,10 +385,14 @@ class GameNameOrSmth(arcade.Window):
         elif key == arcade.key.E:
             self.player.change_angle = ROTATING_SPEED
         elif key == arcade.key.SPACE:
-            projectile = Projectile(self.player.center_x, self.player.center_y, 450 - self.player.angle)
-            self.projectiles_list.append(projectile)
+            if not self.waiting_for_next_wave:
+                projectile = Projectile(self.player.center_x, self.player.center_y, 450 - self.player.angle)
+                self.projectiles_list.append(projectile)
 
     def on_key_release(self, key, modifiers):
+        if self.game_over:
+            return
+
         if key == arcade.key.W or key == arcade.key.S:
             self.player.change_y = 0
         elif key == arcade.key.A or key == arcade.key.D:
@@ -102,11 +401,21 @@ class GameNameOrSmth(arcade.Window):
             self.player.change_angle = 0
 
     def on_mouse_press(self, x, y, button, modifiers):
+        if self.game_over:
+            return
+
         if arcade.MOUSE_BUTTON_LEFT == button:
-            projectile = Projectile(self.player.center_x, self.player.center_y,
-                                    360 - arcade.math.get_angle_degrees(self.player.center_x, self.player.center_y, x,
-                                                                        y))
-            self.projectiles_list.append(projectile)
+            if not self.waiting_for_next_wave:
+                projectile = Projectile(self.player.center_x, self.player.center_y,
+                                        360 - arcade.math.get_angle_degrees(self.player.center_x, self.player.center_y,
+                                                                            x, y))
+                self.projectiles_list.append(projectile)
+
+    def on_text(self, text):
+        """Обработка текстового ввода для ника"""
+        if self.game_over:
+            if len(self.player_name) < 15:
+                self.player_name += text
 
 
 def setup_game(width=800, height=600, title="GameNameOrSmth"):
